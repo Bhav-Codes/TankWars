@@ -368,7 +368,7 @@ class Bullet:
 # =============================================================================
 
 class Tank:
-    """Player/Bot controlled tank."""
+    """Player/Bot controlled tank with Euler physics."""
     
     def __init__(self, tank_id: int, x: float, y: float, color: Tuple[int, int, int]):
         self.id = tank_id
@@ -382,9 +382,14 @@ class Tank:
         self.coins = 0
         self.alive = True
         
-        # Movement
-        self.vx = 0.0
-        self.vy = 0.0
+        # =====================================================================
+        # EULER PHYSICS SYSTEM
+        # =====================================================================
+        self.mass = TANK_MASS
+        self.pos = pygame.math.Vector2(x, y)
+        self.velocity = pygame.math.Vector2(0, 0)
+        self.acceleration = pygame.math.Vector2(0, 0)
+        self.friction = TANK_FRICTION
         
         # State
         self.is_jammed = False
@@ -404,48 +409,60 @@ class Tank:
         self._last_angle = None
         self._rotated_surface = None
     
+    def apply_force(self, force_vector: pygame.math.Vector2):
+        """
+        Apply a force to the tank. F = ma -> a = F / m
+        Multiple forces in one frame will accumulate naturally.
+        """
+        self.acceleration += force_vector / self.mass
+    
     def update(self, dt: float, walls: List['Wall'] = None):
-        """Update tank state."""
-        # Handle jam
+        """Update tank state with Force Accumulation physics."""
+        # Handle jam timer (but do NOT block physics!)
         if self.jam_timer > 0:
             self.jam_timer -= dt
             self.is_jammed = self.jam_timer > 0
-            if self.is_jammed:
-                return
         
-        # Clamp velocity to prevent physics glitches from multiple hits
-        max_velocity = 25.0  # Maximum speed in any direction
-        self.vx = clamp(self.vx, -max_velocity, max_velocity)
-        self.vy = clamp(self.vy, -max_velocity, max_velocity)
+        # =====================================================================
+        # FORCE ACCUMULATION PHYSICS (User's exact pattern)
+        # =====================================================================
         
-        # Apply velocity to position (smooth movement)
-        self.x += self.vx
-        self.y += self.vy
+        # 1. APPLY FRICTION (Force opposing velocity)
+        # This naturally slows down BOTH movement and knockback smoothly.
+        if self.velocity.length() > 0.5:
+            friction_force = self.velocity.normalize() * (-self.friction) * self.velocity.length()
+            self.acceleration += friction_force
         
-        # Apply friction for smooth deceleration (0.85 = slides longer, feels less snappy)
-        self.vx *= 0.85
-        self.vy *= 0.85
+        # 2. INTEGRATE PHYSICS (Euler Integration)
+        # Velocity changes by Acceleration over Time
+        self.velocity += self.acceleration * dt
+        # Position changes by Velocity over Time
+        self.pos += self.velocity * dt
         
-        # Zero out tiny velocities to prevent endless micro-sliding
-        if abs(self.vx) < 0.1:
-            self.vx = 0
-        if abs(self.vy) < 0.1:
-            self.vy = 0
+        # 3. RESET ACCELERATION (At END of frame, ready for next)
+        self.acceleration = pygame.math.Vector2(0, 0)
+        
+        # 4. Sync x/y for compatibility
+        self.x = self.pos.x
+        self.y = self.pos.y
         
         # Clamp to screen bounds
         self.x = clamp(self.x, TANK_SIZE, SCREEN_WIDTH - TANK_SIZE)
         self.y = clamp(self.y, TANK_SIZE, SCREEN_HEIGHT - TANK_SIZE)
+        self.pos.x = self.x
+        self.pos.y = self.y
         
-        # Wall collision
+        # Wall collision (bounce)
         if walls:
             tank_rect = self.get_rect()
             for wall in walls:
                 if tank_rect.colliderect(wall.get_rect()):
-                    # Simple pushback
-                    self.x -= self.vx * 2
-                    self.y -= self.vy * 2
-                    self.vx = 0
-                    self.vy = 0
+                    # Reverse and dampen velocity
+                    self.pos -= self.velocity * dt * 2
+                    self.velocity *= -0.3
+                    self.x = self.pos.x
+                    self.y = self.pos.y
+                    break
         
         # Update cooldowns
         if self.shoot_cooldown > 0:
@@ -455,7 +472,7 @@ class Tank:
             self.muzzle_flash_timer -= 1
     
     def move(self, dx: float, dy: float):
-        """Move the tank in a direction."""
+        """Move the tank in a direction (bot command). Adds force, never overwrites velocity!"""
         if self.is_jammed:
             return
         
@@ -465,11 +482,15 @@ class Tank:
             self.jam_timer = 1.0
             return
         
-        # Normalize and apply speed
+        # Normalize and ADD as force (NEVER overwrite velocity!)
         length = math.sqrt(dx * dx + dy * dy)
         if length > 0:
-            self.vx = (dx / length) * TANK_SPEED
-            self.vy = (dy / length) * TANK_SPEED
+            input_force = pygame.math.Vector2(
+                (dx / length) * TANK_ENGINE_FORCE,
+                (dy / length) * TANK_ENGINE_FORCE
+            )
+            # ADD to acceleration, don't replace
+            self.acceleration += input_force / self.mass
             self.angle = math.degrees(math.atan2(dy, dx))
     
     def shoot(self, target_angle: float) -> Optional[Bullet]:
@@ -481,10 +502,13 @@ class Tank:
         self.shoot_cooldown = 0.2
         self.muzzle_flash_timer = MUZZLE_FLASH_DURATION
         
-        # Recoil
+        # Recoil as force
         rad = math.radians(target_angle)
-        self.vx -= math.cos(rad) * TANK_RECOIL
-        self.vy -= math.sin(rad) * TANK_RECOIL
+        recoil_force = pygame.math.Vector2(
+            -math.cos(rad) * TANK_RECOIL * 2,
+            -math.sin(rad) * TANK_RECOIL * 2
+        )
+        self.apply_force(recoil_force)
         
         # Create bullet at barrel tip
         barrel_x = self.x + math.cos(rad) * (TANK_SIZE / 2 + 5)
@@ -500,10 +524,15 @@ class Tank:
             self.alive = False
     
     def apply_knockback(self, angle: float, force: float):
-        """Apply knockback force."""
+        """Apply knockback as IMPULSE (direct velocity change, not acceleration)."""
         rad = math.radians(angle)
-        self.vx += math.cos(rad) * force
-        self.vy += math.sin(rad) * force
+        # Impulse: directly add to velocity (not acceleration)
+        # This gives INSTANT kick that friction will smooth out
+        impulse = pygame.math.Vector2(
+            math.cos(rad) * force * 15.0,  # Scale for impact
+            math.sin(rad) * force * 15.0
+        )
+        self.velocity += impulse  # IMPULSE: Add directly to velocity!
     
     def draw(self, surface: pygame.Surface, camera: Camera, particles: ParticleSystem):
         """Draw the tank - OPTIMIZED."""
@@ -990,8 +1019,8 @@ class GitWarsEngine:
                 pass
         
         elif action == "STOP":
-            tank.vx = 0
-            tank.vy = 0
+            tank.velocity.x = 0
+            tank.velocity.y = 0
     
     def update(self, dt: float):
         """Update game state."""
@@ -1004,60 +1033,11 @@ class GitWarsEngine:
         # Update particles
         self.particles.update()
         
-        # Update timers
-        if self.game_mode == 1:
-            self.game_timer -= dt
-            self.coin_spawn_timer += dt
-            
-            if self.coin_spawn_timer >= SCRAMBLE_COIN_SPAWN_INTERVAL:
-                self.coin_spawn_timer = 0
-                self.spawn_coin()
-            
-            if self.game_timer <= 0:
-                self.end_scramble()
+        # =====================================================================
+        # PHYSICS LOOP REORDERING (Bullets/Collisions FIRST, then Tanks)
+        # =====================================================================
         
-        elif self.game_mode == 2:
-            self.zone.update(dt)
-            alive_count = sum(1 for t in self.tanks if t.alive)
-            if alive_count <= LABYRINTH_FINAL_SURVIVORS:
-                self.end_labyrinth()
-        
-        elif self.game_mode == 3:
-            self.game_timer -= dt
-            if self.game_timer <= 0 and not self.laser.active:
-                self.laser.activate()
-            self.laser.update(dt)
-        
-        # Update tanks
-        for tank in self.tanks:
-            if tank.alive:
-                tank.update(dt, self.walls)
-                
-                # Zone damage (Mode 2)
-                if self.game_mode == 2 and self.zone.is_in_danger(tank.x, tank.y):
-                    tank.take_damage(LABYRINTH_ZONE_DAMAGE * dt)
-                    if not tank.alive:
-                        self.on_tank_death(tank)
-                
-                # Laser check (Mode 3)
-                if self.game_mode == 3 and self.laser.check_hit(tank):
-                    tank.take_damage(DUEL_LASER_DAMAGE)
-                    if not tank.alive:
-                        self.on_tank_death(tank)
-                
-                # Execute bot logic
-                # Execute bot logic
-                if tank.id in self.bots:
-                    context = self.build_context(tank)
-                    # Safe execution with timeout and copy
-                    action, param = self.bots[tank.id].execute(context)
-                    tank.last_action = action
-                    if action and action != "LAG":
-                        self.process_bot_action(tank, action, param)
-                else:
-                    tank.last_action = None
-        
-        # Update bullets
+        # 1. Update Bullets & Resolve Collisions (Apply Forces)
         for bullet in self.bullets:
             bullet.update()
             
@@ -1087,6 +1067,60 @@ class GitWarsEngine:
         
         # Remove dead bullets
         self.bullets = [b for b in self.bullets if b.alive]
+        
+        # 2. Execute Bot Logic (Apply Input Forces BEFORE physics update)
+        for tank in self.tanks:
+            if tank.alive and tank.id in self.bots:
+                context = self.build_context(tank)
+                action, param = self.bots[tank.id].execute(context)
+                tank.last_action = action
+                if action and action != "LAG":
+                    self.process_bot_action(tank, action, param)
+        
+        # 3. Update Tanks (Integrate Physics - AFTER all forces applied)
+        for tank in self.tanks:
+            if tank.alive:
+                tank.update(dt, self.walls)
+                
+                # Zone damage (Mode 2)
+                if self.game_mode == 2 and self.zone.is_in_danger(tank.x, tank.y):
+                    tank.take_damage(LABYRINTH_ZONE_DAMAGE * dt)
+                    if not tank.alive:
+                        self.on_tank_death(tank)
+                
+        # Update timers
+        if self.game_mode == 1:
+            self.game_timer -= dt
+            self.coin_spawn_timer += dt
+            
+            if self.coin_spawn_timer >= SCRAMBLE_COIN_SPAWN_INTERVAL:
+                self.coin_spawn_timer = 0
+                self.spawn_coin()
+            
+            if self.game_timer <= 0:
+                self.end_scramble()
+        
+        elif self.game_mode == 2:
+            self.zone.update(dt)
+            alive_count = sum(1 for t in self.tanks if t.alive)
+            if alive_count <= LABYRINTH_FINAL_SURVIVORS:
+                self.end_labyrinth()
+        
+        elif self.game_mode == 3:
+            self.game_timer -= dt
+            if self.game_timer <= 0 and not self.laser.active:
+                self.laser.activate()
+            self.laser.update(dt)
+            
+            # Laser check (Mode 3)
+            # Checked here since tanks updated effectively above
+            for tank in self.tanks:
+                if tank.alive and self.laser.check_hit(tank):
+                    tank.take_damage(DUEL_LASER_DAMAGE)
+                    if not tank.alive:
+                        self.on_tank_death(tank)
+
+        # (Bullets updated earlier)
         
         # Coin collection (Mode 1)
         if self.game_mode == 1:

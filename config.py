@@ -56,7 +56,10 @@ COLOR_ZONE_DANGER = (150, 0, 0, 150)
 # TANK SETTINGS
 # =============================================================================
 TANK_SIZE = 40                      # Tank hitbox size (pixels)
-TANK_SPEED = 4.0                    # Movement speed (pixels/frame)
+TANK_SPEED = 4.0                    # Movement speed (pixels/frame) [DEPRECATED in favor of FORCE]
+TANK_ENGINE_FORCE = 1200.0          # Force applied when moving
+TANK_FRICTION = 5.0                 # Friction/Drag factor
+TANK_MASS = 1.0                     # Tank mass
 TANK_ROTATION_SPEED = 5.0           # Degrees per frame
 TANK_MAX_HEALTH = 100
 TANK_STARTING_AMMO = 200
