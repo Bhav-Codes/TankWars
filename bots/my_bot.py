@@ -118,92 +118,142 @@ def update(context):
         turn_angle = math.radians(my_angle - 45)
         return ("MOVE", (math.cos(turn_angle), math.sin(turn_angle)))
     
-    # 3. PRIORITY 1 - DEFENSE: Dodge incoming bullets
-    for bullet in bullets:
-        # We look 120 pixels around us for threats
-        if is_bullet_dangerous(my_x, my_y, bullet, 120):
-            # Calculate an angle perpendicular (90 degrees) to the bullet's path
-            # to sidestep the incoming shot.
-            perp_angle = math.degrees(math.atan2(bullet["vy"], bullet["vx"])) + 90
+    # =========================================================================
+    # LEVEL 3: ACCUMULATIVE LOGIC (Move + Shoot independently)
+    # =========================================================================
+    if game_mode == 3:
+        # 1. CALCULATE MOVEMENT (Survival) - Accumulate vectors
+        total_move_x, total_move_y = 0.0, 0.0
+        
+        # A. Dodge Juggernaut (Critical - High weight)
+        juggernaut = context.get("juggernaut")
+        if juggernaut:
+            jug_x, jug_y = juggernaut["x"], juggernaut["y"]
+            jug_dist = distance(my_x, my_y, jug_x, jug_y)
             
-            # Convert that angle into movement directions (X and Y)
+            if jug_dist < 300:  # Fear radius
+                flee_strength = (300 - jug_dist) / 300
+                dx = my_x - jug_x
+                dy = my_y - jug_y
+                mag = max((dx*dx + dy*dy)**0.5, 1)
+                total_move_x += (dx / mag) * flee_strength * 2
+                total_move_y += (dy / mag) * flee_strength * 2
+        
+        # B. Dodge Bullets (Add to movement)
+        for bullet in bullets:
+            if is_bullet_dangerous(my_x, my_y, bullet, 120):
+                perp_angle = math.degrees(math.atan2(bullet["vy"], bullet["vx"])) + 90
+                total_move_x += math.cos(math.radians(perp_angle))
+                total_move_y += math.sin(math.radians(perp_angle))
+        
+        # C. Chase/Strafe Enemy
+        target_enemy = None
+        if enemies:
+            target_enemy, enemy_dist = find_nearest(my_x, my_y, enemies)
+            
+            move_mag = (total_move_x**2 + total_move_y**2)**0.5
+            if target_enemy:
+                enemy_x, enemy_y = target_enemy["x"], target_enemy["y"]
+                target_angle = angle_to(my_x, my_y, enemy_x, enemy_y)
+                
+                if move_mag < 0.5:  # Not dodging much - add combat movement
+                    if enemy_dist < 80:
+                        # Too close - retreat
+                        retreat_angle = target_angle + 180
+                        total_move_x += math.cos(math.radians(retreat_angle))
+                        total_move_y += math.sin(math.radians(retreat_angle))
+                    elif enemy_dist < 250:
+                        # Mid range - strafe
+                        strafe_angle = target_angle + 90 * (1 if random.random() > 0.5 else -1)
+                        total_move_x += math.cos(math.radians(strafe_angle)) * 0.5
+                        total_move_y += math.sin(math.radians(strafe_angle)) * 0.5
+                    else:
+                        # Far - chase
+                        chase_dx = enemy_x - my_x
+                        chase_dy = enemy_y - my_y
+                        chase_mag = max((chase_dx**2 + chase_dy**2)**0.5, 1)
+                        total_move_x += (chase_dx / chase_mag) * 0.5
+                        total_move_y += (chase_dy / chase_mag) * 0.5
+        
+        # Normalize movement vector
+        move_mag = (total_move_x**2 + total_move_y**2)**0.5
+        if move_mag > 0:
+            total_move_x /= move_mag
+            total_move_y /= move_mag
+        
+        # 2. CALCULATE SHOOTING (Aggression) - INDEPENDENT of movement
+        shoot_angle = None
+        if target_enemy and me["ammo"] > 0:
+            aim_angle = angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"])
+            shoot_angle = aim_angle + random.uniform(-3, 3)  # Slight spray
+        
+        # 3. RETURN COMBINED ACTION
+        if shoot_angle is not None:
+            return ("MOVE_AND_SHOOT", ((total_move_x, total_move_y), shoot_angle))
+        elif move_mag > 0:
+            return ("MOVE", (total_move_x, total_move_y))
+        else:
+            if target_enemy and me["ammo"] > 0:
+                return ("SHOOT", angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"]))
+        
+        # Default for Mode 3 if nothing else
+        return ("MOVE", (0, 0))
+    
+    # =========================================================================
+    # LEVEL 1 & 2: ORIGINAL LOGIC (Unchanged)
+    # =========================================================================
+    
+    # Priority 1: Dodge incoming bullets (Level 1 & 2 only)
+    for bullet in bullets:
+        if is_bullet_dangerous(my_x, my_y, bullet, 120):
+            perp_angle = math.degrees(math.atan2(bullet["vy"], bullet["vx"])) + 90
             dx = math.cos(math.radians(perp_angle))
             dy = math.sin(math.radians(perp_angle))
-            
             return ("MOVE", (dx, dy))
-    
-    # 3. PRIORITY 2 - OBJECTIVES: Round-specific goals
     
     # MODE 1: THE SCRAMBLE (Goal: Collect Coins)
     if game_mode == 1:
         if coins:
-            # Find the closest coin
             nearest, dist = find_nearest(my_x, my_y, coins)
             if nearest:
-                # OPTIONAL STRATEGY: Harass enemies near the coin
-                # If an enemy is closer than us or within 200px, shoot to push them back
                 for enemy in enemies:
                     enemy_dist = distance(enemy["x"], enemy["y"], nearest["x"], nearest["y"])
                     if enemy_dist < dist and distance(my_x, my_y, enemy["x"], enemy["y"]) < 200:
-                        if me["ammo"] > 10:  # Only shoot if we have spare ammo
+                        if me["ammo"] > 10:
                             angle = angle_to(my_x, my_y, enemy["x"], enemy["y"])
                             return ("SHOOT", angle)
                 
-                # If no enemies to harass, move directly to the coin!
                 dx = nearest["x"] - my_x
                 dy = nearest["y"] - my_y
                 return ("MOVE", (dx, dy))
     
-    # MODE 2 & 3: COMBAT (Goal: Eliminate Enemies)
-    else:
-        # If no enemies are left, move to the center to stay safe from the zone
+    # MODE 2: THE LABYRINTH - Original combat logic
+    elif game_mode == 2:
         if not enemies:
-            center_x, center_y = 640, 360 # Middle of 1280x720 screen
+            center_x, center_y = 640, 360
             dx = center_x - my_x
             dy = center_y - my_y
             return ("MOVE", (dx, dy))
         
-        # Find the nearest threat
         nearest_enemy, dist = find_nearest(my_x, my_y, enemies)
         
         if nearest_enemy:
             enemy_x = nearest_enemy["x"]
             enemy_y = nearest_enemy["y"]
-            # Target the enemy's current position
             target_angle = angle_to(my_x, my_y, enemy_x, enemy_y)
             
-            # A reference value for combat range (150 pixels)
-            ideal_range = 150
-            
-            # SITUATION: Defensive (They are too close!)
             if dist < 80:
                 if me["ammo"] > 0:
-                    # Retreat angle is the opposite of the target angle (+180 degrees)
-                    retreat_angle = target_angle + 180
-                    dx = math.cos(math.radians(retreat_angle))
-                    dy = math.sin(math.radians(retreat_angle))
-                    
-                    # Retreat while shooting back (70% chance to shoot)
-                    if random.random() < 0.7:
-                        return ("SHOOT", target_angle)
-                    return ("MOVE", (dx, dy))
-            
-            # SITUATION: Offensive (In attack range!)
+                    return ("SHOOT", target_angle)
             elif dist < 250:
                 if me["ammo"] > 0:
-                    # Add a tiny bit of random 'spray' (+/- 5 degrees) to be unpredictable
                     aim_angle = target_angle + random.uniform(-5, 5)
                     return ("SHOOT", aim_angle)
-            
-            # SITUATION: Pursuit (Too far away!)
             else:
-                # Move directly toward the enemy to close the distance
                 dx = enemy_x - my_x
                 dy = enemy_y - my_y
                 return ("MOVE", (dx, dy))
     
     # 4. DEFAULT: Wander randomly
-    # If none of the above logic triggers, move in a random direction so 
-    # you aren't a sitting duck.
     angle = random.uniform(0, 360)
     return ("MOVE", (math.cos(math.radians(angle)), math.sin(math.radians(angle))))

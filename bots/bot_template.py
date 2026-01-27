@@ -205,36 +205,102 @@ def update(context):
         turn_angle = math.radians(my_angle - 45)
         return ("MOVE", (math.cos(turn_angle), math.sin(turn_angle)))
     
-    # Priority 1: Dodge incoming bullets
-    for bullet in bullets:
-        if will_bullet_hit_me(my_x, my_y, bullet):
-            # Dodge perpendicular to bullet direction
-            dodge_angle = math.degrees(math.atan2(bullet["vy"], bullet["vx"])) + 90
-            dx = math.cos(math.radians(dodge_angle))
-            dy = math.sin(math.radians(dodge_angle))
-            return ("MOVE", (dx, dy))
+    # =========================================================================
+    # LEVEL 3: ACCUMULATIVE LOGIC (Move + Shoot independently)
+    # =========================================================================
+    if game_mode == 3:
+        # 1. CALCULATE MOVEMENT (Survival) - Accumulate vectors
+        total_move_x, total_move_y = 0.0, 0.0
+        
+        # A. Dodge Juggernaut (Critical - High weight)
+        juggernaut = context.get("juggernaut")
+        if juggernaut:
+            jug_x, jug_y = juggernaut["x"], juggernaut["y"]
+            jug_dist = distance(my_x, my_y, jug_x, jug_y)
+            
+            if jug_dist < 300:  # Fear radius
+                # Vector AWAY from Juggernaut (weighted by proximity)
+                flee_strength = (300 - jug_dist) / 300  # 1.0 at 0 dist, 0.0 at 300
+                dx = my_x - jug_x
+                dy = my_y - jug_y
+                mag = max((dx*dx + dy*dy)**0.5, 1)
+                total_move_x += (dx / mag) * flee_strength * 2  # High priority
+                total_move_y += (dy / mag) * flee_strength * 2
+        
+        # B. Dodge Bullets (Add to movement)
+        for bullet in bullets:
+            if will_bullet_hit_me(my_x, my_y, bullet):
+                # Perpendicular dodge
+                dodge_angle = math.degrees(math.atan2(bullet["vy"], bullet["vx"])) + 90
+                total_move_x += math.cos(math.radians(dodge_angle))
+                total_move_y += math.sin(math.radians(dodge_angle))
+        
+        # C. Chase Enemy (Only if not frantically dodging)
+        target_enemy = None
+        if enemies:
+            target_enemy, enemy_dist = find_nearest(my_x, my_y, enemies)
+            
+            # Only add chase vector if not in danger
+            move_mag = (total_move_x**2 + total_move_y**2)**0.5
+            if target_enemy and move_mag < 0.5:  # Not dodging much
+                chase_dx = target_enemy["x"] - my_x
+                chase_dy = target_enemy["y"] - my_y
+                chase_mag = max((chase_dx**2 + chase_dy**2)**0.5, 1)
+                total_move_x += (chase_dx / chase_mag) * 0.5  # Lower priority than survival
+                total_move_y += (chase_dy / chase_mag) * 0.5
+        
+        # Normalize movement vector
+        move_mag = (total_move_x**2 + total_move_y**2)**0.5
+        if move_mag > 0:
+            total_move_x /= move_mag
+            total_move_y /= move_mag
+        
+        # 2. CALCULATE SHOOTING (Aggression) - INDEPENDENT of movement
+        shoot_angle = None
+        if target_enemy and me["ammo"] > 0:
+            shoot_angle = angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"])
+        
+        # 3. RETURN COMBINED ACTION
+        if shoot_angle is not None:
+            # Move AND shoot simultaneously
+            return ("MOVE_AND_SHOOT", ((total_move_x, total_move_y), shoot_angle))
+        elif move_mag > 0:
+            return ("MOVE", (total_move_x, total_move_y))
+        else:
+            # No movement needed, just shoot if we can
+            if target_enemy and me["ammo"] > 0:
+                return ("SHOOT", angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"]))
+    
+    # =========================================================================
+    # LEVEL 1 & 2: ORIGINAL LOGIC (Unchanged)
+    # =========================================================================
+    
+    # Priority 1: Dodge incoming bullets (standard MOVE - Level 1 & 2 only)
+    if game_mode != 3:
+        for bullet in bullets:
+            if will_bullet_hit_me(my_x, my_y, bullet):
+                dodge_angle = math.degrees(math.atan2(bullet["vy"], bullet["vx"])) + 90
+                dx = math.cos(math.radians(dodge_angle))
+                dy = math.sin(math.radians(dodge_angle))
+                return ("MOVE", (dx, dy))
     
     # Game Mode specific behavior
     if game_mode == 1:  # THE SCRAMBLE - Collect coins!
         if coins:
             nearest_coin, dist = find_nearest(my_x, my_y, coins)
             if nearest_coin:
-                # Move toward nearest coin
                 dx = nearest_coin["x"] - my_x
                 dy = nearest_coin["y"] - my_y
                 return ("MOVE", (dx, dy))
     
-    elif game_mode in [2, 3]:  # LABYRINTH or DUEL - Fight!
+    elif game_mode == 2:  # THE LABYRINTH - Original combat logic
         if enemies and me["ammo"] > 0:
-            # Find and attack nearest enemy
             nearest_enemy, dist = find_nearest(my_x, my_y, enemies)
             if nearest_enemy:
                 if dist < 200:
-                    # Close enough - SHOOT!
                     target_angle = angle_to(my_x, my_y, nearest_enemy["x"], nearest_enemy["y"])
                     return ("SHOOT", target_angle)
                 else:
-                    # Too far - move closer
                     dx = nearest_enemy["x"] - my_x
                     dy = nearest_enemy["y"] - my_y
                     return ("MOVE", (dx, dy))

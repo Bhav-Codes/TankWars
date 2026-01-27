@@ -976,8 +976,247 @@ class DangerZone:
             surface.blit(self.active_surface, blit_pos)
 
 # =============================================================================
+# JUGGERNAUT (Boss - Mode 3)
+# =============================================================================
+
+class Juggernaut:
+    """
+    The Juggernaut - A massive AI-controlled boss that attacks all players.
+    Features:
+    - Spinning saw-blade visual (3x tank size)
+    - Creeps toward nearest player
+    - Melee contact = rapid damage + massive knockback
+    - Burst Cannon: Idle -> Charge (glow) -> 5-shot burst
+    """
+    
+    # Weapon phases
+    PHASE_IDLE = 0
+    PHASE_CHARGE = 1
+    PHASE_BURST = 2
+    
+    def __init__(self, x: float, y: float, particles: ParticleSystem):
+        self.x = x
+        self.y = y
+        self.radius = JUGGERNAUT_SIZE // 2
+        self.particles = particles
+        
+        # Movement
+        self.vel = pygame.math.Vector2(0, 0)
+        
+        # Visual rotation (spinning saw-blade effect)
+        self.rotation = 0.0
+        
+        # Weapon state
+        self.weapon_phase = self.PHASE_IDLE
+        self.weapon_timer = 0.0
+        self.burst_count = 0
+        self.burst_cooldown = 0.0
+        self.target_angle = 0.0  # Turret tracking angle
+        self.target_tank = None  # Current target
+        
+        # Pre-render saw-blade surface
+        self._create_surfaces()
+    
+    def _create_surfaces(self):
+        """Pre-render the saw-blade body surface."""
+        size = JUGGERNAUT_SIZE + 20
+        self.body_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        center = size // 2
+        
+        # Outer glow
+        pygame.draw.circle(self.body_surface, (*JUGGERNAUT_COLOR, 80), (center, center), self.radius + 10)
+        
+        # Main body
+        pygame.draw.circle(self.body_surface, JUGGERNAUT_COLOR, (center, center), self.radius)
+        
+        # Saw-blade teeth (8 triangular notches)
+        for i in range(8):
+            angle = i * (math.pi / 4)
+            # Outer point
+            ox = center + math.cos(angle) * (self.radius + 15)
+            oy = center + math.sin(angle) * (self.radius + 15)
+            # Inner points
+            a1 = angle - 0.2
+            a2 = angle + 0.2
+            ix1 = center + math.cos(a1) * (self.radius - 5)
+            iy1 = center + math.sin(a1) * (self.radius - 5)
+            ix2 = center + math.cos(a2) * (self.radius - 5)
+            iy2 = center + math.sin(a2) * (self.radius - 5)
+            pygame.draw.polygon(self.body_surface, JUGGERNAUT_BLADE_COLOR, [(ox, oy), (ix1, iy1), (ix2, iy2)])
+        
+        # Inner ring
+        pygame.draw.circle(self.body_surface, (100, 30, 30), (center, center), self.radius // 2)
+        pygame.draw.circle(self.body_surface, (60, 15, 15), (center, center), self.radius // 3)
+    
+    def find_nearest_target(self, tanks: List) -> Optional[any]:
+        """Find the nearest alive player tank."""
+        nearest = None
+        min_dist = float('inf')
+        
+        for tank in tanks:
+            if tank.alive:
+                dist = distance(self.x, self.y, tank.x, tank.y)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest = tank
+        
+        return nearest
+    
+    def update(self, dt: float, tanks: List, bullets: List):
+        """Update Juggernaut movement, AI, and weapon."""
+        # Spin the saw-blade
+        self.rotation += JUGGERNAUT_ROTATION_SPEED * dt
+        
+        # Store ALL alive tanks for omni-burst
+        self.all_targets = [t for t in tanks if t.alive]
+        
+        # Find nearest target for movement
+        self.target_tank = self.find_nearest_target(tanks)
+        
+        if self.target_tank:
+            # Move toward target (slow creep)
+            dx = self.target_tank.x - self.x
+            dy = self.target_tank.y - self.y
+            dist = max((dx*dx + dy*dy)**0.5, 1)
+            
+            # Normalize and apply speed
+            self.vel.x = (dx / dist) * JUGGERNAUT_SPEED * dt
+            self.vel.y = (dy / dist) * JUGGERNAUT_SPEED * dt
+            
+            self.x += self.vel.x
+            self.y += self.vel.y
+            
+            # Update turret tracking angle (for visual)
+            self.target_angle = math.degrees(math.atan2(dy, dx))
+        
+        # Keep in bounds
+        self.x = max(self.radius, min(SCREEN_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(SCREEN_HEIGHT - self.radius, self.y))
+        
+        # Weapon state machine
+        self._update_weapon(dt, bullets)
+    
+    def _update_weapon(self, dt: float, bullets: List):
+        """Update burst cannon state machine."""
+        self.weapon_timer += dt
+        
+        if self.weapon_phase == self.PHASE_IDLE:
+            if self.weapon_timer >= JUGGERNAUT_IDLE_TIME:
+                self.weapon_phase = self.PHASE_CHARGE
+                self.weapon_timer = 0.0
+        
+        elif self.weapon_phase == self.PHASE_CHARGE:
+            if self.weapon_timer >= JUGGERNAUT_CHARGE_TIME:
+                self.weapon_phase = self.PHASE_BURST
+                self.weapon_timer = 0.0
+                self.burst_count = 0
+                self.burst_cooldown = 0.0
+        
+        elif self.weapon_phase == self.PHASE_BURST:
+            self.burst_cooldown -= dt
+            
+            if self.burst_cooldown <= 0 and self.burst_count < JUGGERNAUT_BURST_COUNT:
+                # OMNI-BURST: Fire at ALL alive tanks simultaneously!
+                self._fire_omni_burst(bullets)
+                self.burst_count += 1
+                self.burst_cooldown = JUGGERNAUT_BURST_INTERVAL
+            
+            if self.burst_count >= JUGGERNAUT_BURST_COUNT:
+                self.weapon_phase = self.PHASE_IDLE
+                self.weapon_timer = 0.0
+    
+    def _fire_omni_burst(self, bullets: List):
+        """Fire heavy bullets at ALL alive tanks simultaneously."""
+        if not self.all_targets:
+            return
+        
+        for target in self.all_targets:
+            # Calculate angle to this specific target
+            dx = target.x - self.x
+            dy = target.y - self.y
+            target_angle = math.degrees(math.atan2(dy, dx))
+            angle_rad = math.radians(target_angle)
+            
+            # Spawn bullet at turret position toward this target
+            bx = self.x + math.cos(angle_rad) * (self.radius + 10)
+            by = self.y + math.sin(angle_rad) * (self.radius + 10)
+            
+            # Create bullet
+            bullet = Bullet(bx, by, target_angle, -1, (255, 100, 100))
+            
+            # Override with Juggernaut's heavy bullet stats
+            bullet.vx = math.cos(angle_rad) * JUGGERNAUT_BULLET_SPEED
+            bullet.vy = math.sin(angle_rad) * JUGGERNAUT_BULLET_SPEED
+            bullet.damage = JUGGERNAUT_BULLET_DAMAGE
+            bullet.is_critical = False
+            
+            bullets.append(bullet)
+            
+            # Muzzle flash for each bullet
+            self.particles.spawn_muzzle_flash(bx, by, target_angle, (255, 150, 100))
+        
+        # Single sound for the burst
+        play_sound(SFX_SHOOT)
+    
+    def check_melee(self, tank) -> bool:
+        """Check if tank is touching the Juggernaut."""
+        dist = distance(self.x, self.y, tank.x, tank.y)
+        return dist < self.radius + TANK_SIZE // 2
+    
+    def apply_melee_damage(self, tank):
+        """Apply contact damage and knockback to tank."""
+        if not self.check_melee(tank):
+            return
+        
+        # Damage (per frame, called every update)
+        tank.take_damage(JUGGERNAUT_MELEE_DAMAGE)
+        
+        # CRITICAL: Knockback to push tank OUT (prevents getting stuck inside boss)
+        angle = angle_to(self.x, self.y, tank.x, tank.y)
+        tank.apply_knockback(angle, JUGGERNAUT_MELEE_KNOCKBACK)
+    
+    def draw(self, surface: pygame.Surface, camera: Camera):
+        """Draw the Juggernaut with spinning effect."""
+        pos = camera.apply((self.x, self.y))
+        
+        # Rotate and blit body
+        rotated_body = pygame.transform.rotate(self.body_surface, -self.rotation)
+        body_rect = rotated_body.get_rect(center=pos)
+        surface.blit(rotated_body, body_rect)
+        
+        # Draw turret on top
+        turret_len = JUGGERNAUT_TURRET_SIZE
+        angle_rad = math.radians(self.target_angle)
+        tx = pos[0] + math.cos(angle_rad) * turret_len
+        ty = pos[1] + math.sin(angle_rad) * turret_len
+        
+        # Turret color changes during charge/burst
+        if self.weapon_phase == self.PHASE_CHARGE:
+            # Flashing warning glow
+            flash = abs(math.sin(self.weapon_timer * 10))
+            turret_color = (255, int(100 + flash * 155), int(flash * 100))
+        elif self.weapon_phase == self.PHASE_BURST:
+            turret_color = (255, 255, 200)  # Bright during firing
+        else:
+            turret_color = (150, 50, 50)
+        
+        pygame.draw.line(surface, turret_color, pos, (tx, ty), 8)
+        pygame.draw.circle(surface, turret_color, (int(tx), int(ty)), 6)
+    
+    def get_context_data(self) -> Dict:
+        """Return data for bot context."""
+        return {
+            "x": self.x,
+            "y": self.y,
+            "radius": self.radius,
+            "weapon_phase": self.weapon_phase,
+            "target_angle": self.target_angle
+        }
+
+# =============================================================================
 # BOT LOADER (Sandboxed Execution)
 # =============================================================================
+
 
 class BotLoader:
     """Safely loads and executes student bot scripts."""
@@ -1052,7 +1291,7 @@ class GitWarsEngine:
         self.bots: Dict[int, BotLoader] = {}
         
         self.zone = Zone()
-        self.laser = Laser()
+        self.juggernaut = None  # Spawned in Mode 3
         
         # Danger Zones (Orbital Strikes - Mode 2)
         self.danger_zones: List[DangerZone] = []
@@ -1074,7 +1313,7 @@ class GitWarsEngine:
         self._mode_titles = {
             1: self.font_medium.render("THE SCRAMBLE", True, COLOR_TEXT),
             2: self.font_medium.render("THE LABYRINTH", True, COLOR_TEXT),
-            3: self.font_medium.render("THE DUEL", True, COLOR_TEXT)
+            3: self.font_medium.render("THE JUGGERNAUT", True, COLOR_TEXT)
         }
         
         # Initialize game
@@ -1126,8 +1365,12 @@ class GitWarsEngine:
             self.danger_zones = []  # Reset danger zones
             self.danger_zone_timer = 0.0
         elif self.game_mode == 3:
-            self.game_timer = DUEL_SUDDEN_DEATH_TIME
-            self.laser = Laser()  # Reset laser
+            # Spawn Juggernaut in center
+            self.juggernaut = Juggernaut(
+                SCREEN_WIDTH // 2,
+                SCREEN_HEIGHT // 2,
+                self.particles
+            )
     
     def generate_maze(self):
         """Generate walls for labyrinth mode."""
@@ -1216,6 +1459,7 @@ class GitWarsEngine:
             "walls": wall_data,
             "bullets": bullet_data,
             "sensors": sensor_readings,  # NEW: Raycast sensors for wall detection
+            "juggernaut": self.juggernaut.get_context_data() if self.juggernaut and self.game_mode == 3 else None,
             "game_mode": self.game_mode,
             "time_left": self.game_timer
         }
@@ -1243,6 +1487,26 @@ class GitWarsEngine:
         elif action == "STOP":
             tank.velocity.x = 0
             tank.velocity.y = 0
+        
+        elif action == "MOVE_AND_SHOOT" and param is not None:
+            # Strafing: Move AND shoot in the same frame!
+            try:
+                move_dir, shoot_angle = param
+                
+                # Apply movement
+                if move_dir:
+                    dx, dy = move_dir
+                    tank.move(float(dx), float(dy))
+                
+                # Fire bullet
+                if shoot_angle is not None:
+                    bullet = tank.shoot(float(shoot_angle))
+                    if bullet:
+                        self.bullets.append(bullet)
+                        self.particles.spawn_muzzle_flash(bullet.x, bullet.y, float(shoot_angle), tank.color)
+                        play_sound(SFX_SHOOT)
+            except:
+                pass
     
     def update(self, dt: float):
         """Update game state."""
@@ -1348,18 +1612,16 @@ class GitWarsEngine:
                 self.end_labyrinth()
         
         elif self.game_mode == 3:
-            self.game_timer -= dt
-            if self.game_timer <= 0 and not self.laser.active:
-                self.laser.activate()
-            self.laser.update(dt)
-            
-            # Laser check (Mode 3)
-            # Checked here since tanks updated effectively above
-            for tank in self.tanks:
-                if tank.alive and self.laser.check_hit(tank):
-                    tank.take_damage(DUEL_LASER_DAMAGE)
-                    if not tank.alive:
-                        self.on_tank_death(tank)
+            # Update Juggernaut (movement, AI, weapon)
+            if self.juggernaut:
+                self.juggernaut.update(dt, self.tanks, self.bullets)
+                
+                # Apply melee damage to ALL tanks touching Juggernaut
+                for tank in self.tanks:
+                    if tank.alive:
+                        self.juggernaut.apply_melee_damage(tank)
+                        if not tank.alive:
+                            self.on_tank_death(tank)
 
         # (Bullets updated earlier)
         
@@ -1524,9 +1786,9 @@ class GitWarsEngine:
         # Draw particles (on top)
         self.particles.draw(self.screen, self.camera)
         
-        # Draw laser (Mode 3)
-        if self.game_mode == 3:
-            self.laser.draw(self.screen, self.camera)
+        # Draw Juggernaut (Mode 3)
+        if self.game_mode == 3 and self.juggernaut:
+            self.juggernaut.draw(self.screen, self.camera)
         
         # Draw UI
         self.draw_ui()

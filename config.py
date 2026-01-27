@@ -126,10 +126,31 @@ DANGER_ZONE_BLAST_INTERVAL = 0.5    # Seconds between explosions
 COLOR_DANGER_WARNING = (255, 50, 50, 100)   # Semi-transparent red
 COLOR_DANGER_ACTIVE = (255, 150, 150, 180)  # Bright red-white
 
-# Mode 3: The Duel
-DUEL_SUDDEN_DEATH_TIME = 60         # Seconds before laser
-DUEL_LASER_SPEED = 3.0              # Pixels per frame
-DUEL_LASER_DAMAGE = 100             # Instant kill
+# Mode 3: The Juggernaut (Boss Fight)
+# Juggernaut Body
+JUGGERNAUT_SIZE = 120               # 3x tank size (diameter)
+JUGGERNAUT_SPEED = 100.0            # Slow creep (0.5x player speed)
+JUGGERNAUT_HEALTH = 9999            # Effectively invincible
+JUGGERNAUT_ROTATION_SPEED = 180     # Visual spin (degrees/sec)
+JUGGERNAUT_COLOR = (80, 20, 20)     # Dark red body
+JUGGERNAUT_BLADE_COLOR = (40, 10, 10)  # Darker blade accents
+
+# Juggernaut Melee (Contact Damage)
+JUGGERNAUT_MELEE_DAMAGE = 5         # Per-frame damage on contact
+JUGGERNAUT_MELEE_KNOCKBACK = 800.0  # Massive push force
+
+# Juggernaut Burst Cannon
+JUGGERNAUT_IDLE_TIME = 3.0          # Seconds tracking before charge
+JUGGERNAUT_CHARGE_TIME = 1.0        # Seconds of warning (turret glows)
+JUGGERNAUT_BURST_TIME = 1.0         # Seconds of burst fire
+JUGGERNAUT_BURST_COUNT = 5          # Bullets per burst
+JUGGERNAUT_BURST_INTERVAL = 0.2     # Seconds between burst shots
+JUGGERNAUT_BULLET_SPEED = 15.0      # Fast heavy bullets
+JUGGERNAUT_BULLET_DAMAGE = 20       # High damage per hit
+JUGGERNAUT_BULLET_KNOCKBACK = 300.0 # Heavy knockback
+JUGGERNAUT_BULLET_SIZE = 10         # Larger bullets
+JUGGERNAUT_TURRET_SIZE = 30         # Turret visual size
+
 
 # =============================================================================
 # COIN SETTINGS
