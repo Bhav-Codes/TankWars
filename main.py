@@ -1260,7 +1260,7 @@ class BotLoader:
             
             if isinstance(result, tuple) and len(result) == 2:
                 action, param = result
-                if action in ["MOVE", "SHOOT", "STOP"]:
+                if action in ["MOVE", "SHOOT", "STOP", "MOVE_AND_SHOOT"]:
                     return action, param
             
             return None, None

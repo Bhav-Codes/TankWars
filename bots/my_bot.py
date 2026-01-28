@@ -175,6 +175,14 @@ def update(context):
                         total_move_x += (chase_dx / chase_mag) * 0.5
                         total_move_y += (chase_dy / chase_mag) * 0.5
         
+        # D. Wander if idle (prevents freezing)
+        move_mag = (total_move_x**2 + total_move_y**2)**0.5
+        if move_mag < 0.1:
+            # Move towards center-ish but stay away from exact center
+            center_angle = math.atan2(300 - my_y, 400 - my_x)
+            total_move_x += math.cos(center_angle + context.get("time_left", 0)) * 0.5
+            total_move_y += math.sin(center_angle + context.get("time_left", 0)) * 0.5
+        
         # Normalize movement vector
         move_mag = (total_move_x**2 + total_move_y**2)**0.5
         if move_mag > 0:
@@ -190,14 +198,9 @@ def update(context):
         # 3. RETURN COMBINED ACTION
         if shoot_angle is not None:
             return ("MOVE_AND_SHOOT", ((total_move_x, total_move_y), shoot_angle))
-        elif move_mag > 0:
-            return ("MOVE", (total_move_x, total_move_y))
-        else:
-            if target_enemy and me["ammo"] > 0:
-                return ("SHOOT", angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"]))
         
-        # Default for Mode 3 if nothing else
-        return ("MOVE", (0, 0))
+        # Fallback: Just Move (ensures we are always doing something)
+        return ("MOVE", (total_move_x, total_move_y))
     
     # =========================================================================
     # LEVEL 1 & 2: ORIGINAL LOGIC (Unchanged)

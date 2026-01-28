@@ -129,7 +129,7 @@ COLOR_DANGER_ACTIVE = (255, 150, 150, 180)  # Bright red-white
 # Mode 3: The Juggernaut (Boss Fight)
 # Juggernaut Body
 JUGGERNAUT_SIZE = 120               # 3x tank size (diameter)
-JUGGERNAUT_SPEED = 100.0            # Slow creep (0.5x player speed)
+JUGGERNAUT_SPEED = 20.0            # Slow creep (0.5x player speed)
 JUGGERNAUT_HEALTH = 9999            # Effectively invincible
 JUGGERNAUT_ROTATION_SPEED = 180     # Visual spin (degrees/sec)
 JUGGERNAUT_COLOR = (80, 20, 20)     # Dark red body
@@ -140,15 +140,15 @@ JUGGERNAUT_MELEE_DAMAGE = 5         # Per-frame damage on contact
 JUGGERNAUT_MELEE_KNOCKBACK = 800.0  # Massive push force
 
 # Juggernaut Burst Cannon
-JUGGERNAUT_IDLE_TIME = 3.0          # Seconds tracking before charge
-JUGGERNAUT_CHARGE_TIME = 1.0        # Seconds of warning (turret glows)
-JUGGERNAUT_BURST_TIME = 1.0         # Seconds of burst fire
-JUGGERNAUT_BURST_COUNT = 5          # Bullets per burst
+JUGGERNAUT_IDLE_TIME = 0.0          # Seconds tracking before charge
+JUGGERNAUT_CHARGE_TIME = 0.0        # Seconds of warning (turret glows)
+JUGGERNAUT_BURST_TIME = 2.0         # Seconds of burst fire
+JUGGERNAUT_BURST_COUNT = 10          # Bullets per burst
 JUGGERNAUT_BURST_INTERVAL = 0.2     # Seconds between burst shots
-JUGGERNAUT_BULLET_SPEED = 15.0      # Fast heavy bullets
+JUGGERNAUT_BULLET_SPEED = 6.0      # Fast heavy bullets
 JUGGERNAUT_BULLET_DAMAGE = 20       # High damage per hit
-JUGGERNAUT_BULLET_KNOCKBACK = 300.0 # Heavy knockback
-JUGGERNAUT_BULLET_SIZE = 10         # Larger bullets
+JUGGERNAUT_BULLET_KNOCKBACK = 1000.0 # Heavy knockback
+JUGGERNAUT_BULLET_SIZE = 20         # Larger bullets
 JUGGERNAUT_TURRET_SIZE = 30         # Turret visual size
 
 

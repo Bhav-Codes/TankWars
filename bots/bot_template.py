@@ -235,41 +235,56 @@ def update(context):
                 total_move_x += math.cos(math.radians(dodge_angle))
                 total_move_y += math.sin(math.radians(dodge_angle))
         
-        # C. Chase Enemy (Only if not frantically dodging)
+        # C. Chase Enemy or Wander
         target_enemy = None
         if enemies:
             target_enemy, enemy_dist = find_nearest(my_x, my_y, enemies)
             
-            # Only add chase vector if not in danger
+            # Only add chase vector if not in danger/dodging hard
             move_mag = (total_move_x**2 + total_move_y**2)**0.5
-            if target_enemy and move_mag < 0.5:  # Not dodging much
+            if target_enemy and move_mag < 0.5:
                 chase_dx = target_enemy["x"] - my_x
                 chase_dy = target_enemy["y"] - my_y
                 chase_mag = max((chase_dx**2 + chase_dy**2)**0.5, 1)
-                total_move_x += (chase_dx / chase_mag) * 0.5  # Lower priority than survival
-                total_move_y += (chase_dy / chase_mag) * 0.5
+                
+                # Orbit/Strafe logic: Don't run straight at them, keep distance
+                desired_dist = 200
+                if enemy_dist > desired_dist:
+                    # Chase
+                    total_move_x += (chase_dx / chase_mag) * 0.6
+                    total_move_y += (chase_dy / chase_mag) * 0.6
+                else:
+                    # Strafe (perpendicular)
+                    total_move_x += -(chase_dy / chase_mag) * 0.6
+                    total_move_y += (chase_dx / chase_mag) * 0.6
         
+        # D. Wander if idle (prevents freezing)
+        move_mag = (total_move_x**2 + total_move_y**2)**0.5
+        if move_mag < 0.1:
+            # Move towards center-ish but stay away from exact center
+            center_angle = math.atan2(300 - my_y, 400 - my_x)
+            total_move_x += math.cos(center_angle + context.get("time_left", 0)) * 0.5
+            total_move_y += math.sin(center_angle + context.get("time_left", 0)) * 0.5
+
         # Normalize movement vector
         move_mag = (total_move_x**2 + total_move_y**2)**0.5
         if move_mag > 0:
             total_move_x /= move_mag
             total_move_y /= move_mag
         
-        # 2. CALCULATE SHOOTING (Aggression) - INDEPENDENT of movement
+        # 2. CALCULATE SHOOTING (Aggression)
         shoot_angle = None
         if target_enemy and me["ammo"] > 0:
             shoot_angle = angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"])
+            shoot_angle += random.uniform(-5, 5) # Slight spread
         
         # 3. RETURN COMBINED ACTION
         if shoot_angle is not None:
             # Move AND shoot simultaneously
             return ("MOVE_AND_SHOOT", ((total_move_x, total_move_y), shoot_angle))
-        elif move_mag > 0:
-            return ("MOVE", (total_move_x, total_move_y))
-        else:
-            # No movement needed, just shoot if we can
-            if target_enemy and me["ammo"] > 0:
-                return ("SHOOT", angle_to(my_x, my_y, target_enemy["x"], target_enemy["y"]))
+        
+        # Fallback: Just Move
+        return ("MOVE", (total_move_x, total_move_y))
     
     # =========================================================================
     # LEVEL 1 & 2: ORIGINAL LOGIC (Unchanged)
