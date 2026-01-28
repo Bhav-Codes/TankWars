@@ -62,7 +62,7 @@ TANK_FRICTION = 5.0                 # Friction/Drag factor
 TANK_MASS = 1.0                     # Tank mass
 TANK_ROTATION_SPEED = 5.0           # Degrees per frame
 TANK_MAX_HEALTH = 1000
-TANK_STARTING_AMMO = 200
+TANK_STARTING_AMMO = 1500
 TANK_RECOIL = 3.0                   # Pushback when shooting
 
 # =============================================================================
@@ -174,9 +174,16 @@ BOT_DEFAULT_COUNT = 10           # Number of bots in game
 
 # =============================================================================
 # AUDIO SETTINGS
-# =============================================================================
+# =============================================================================# AUDIO SETTINGS
 MUSIC_VOLUME = 0.5
-SFX_VOLUME = 0.7
+SFX_VOLUME = 0.7  # Master SFX volume (base)
+
+# Individual Sound Volumes (0.0 to 1.0)
+VOL_SHOOT = 0.00      # Lower volume for frequent shooting
+VOL_DEATH = 0.8      # Loud explosion
+VOL_COIN = 0.6       # Moderate pickup sound
+VOL_READY = 0.9      # Loud start announcement
+VOL_WIN = 1.0        # Loud victory music
 PITCH_VARIATION = 0.2               # Random pitch shift for SFX
 
 # =============================================================================

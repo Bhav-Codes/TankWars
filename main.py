@@ -29,6 +29,7 @@ from config import *
 # Initialize Pygame
 pygame.init()
 pygame.mixer.init()
+pygame.mixer.set_num_channels(32)  # Increase channels to prevent sounds cutting out
 
 # =============================================================================
 # AUDIO SYSTEM (Pre-loaded at startup for performance)
@@ -48,9 +49,13 @@ def load_sound(filename: str) -> Optional[pygame.mixer.Sound]:
     return None
 
 # Load all sounds at startup
-SFX_SHOOT = load_sound("shoot.wav")
-SFX_EXPLOSION = load_sound("explosion.wav")
-SFX_COIN = load_sound("coin.wav")
+SFX_SHOOT = load_sound("shoot.mp3")
+SFX_DEATH = load_sound("death.mp3")  # Was explosion.wav
+SFX_COIN = load_sound("coin.mp3")
+SFX_READY = load_sound("ready.mp3")
+SFX_WIN_1 = load_sound("win1.mp3")
+SFX_WIN_2 = load_sound("win2.mp3")
+SFX_WIN_3 = load_sound("win3.mp3")
 
 def play_sound(sound: Optional[pygame.mixer.Sound], volume: float = SFX_VOLUME, pitch_variation: bool = False):
     """Play a sound with optional pitch variation."""
@@ -915,7 +920,7 @@ class DangerZone:
         
         # Spawn particles
         self.particles.spawn_explosion(blast_x, blast_y, (255, 100, 50))
-        play_sound(SFX_EXPLOSION)
+        play_sound(SFX_DEATH, VOL_DEATH)
     
     def check_hit(self, tank) -> bool:
         """Check if tank is inside active zone."""
@@ -1156,7 +1161,7 @@ class Juggernaut:
             self.particles.spawn_muzzle_flash(bx, by, target_angle, (255, 150, 100))
         
         # Single sound for the burst
-        play_sound(SFX_SHOOT)
+        play_sound(SFX_SHOOT, VOL_SHOOT)
     
     def check_melee(self, tank) -> bool:
         """Check if tank is touching the Juggernaut."""
@@ -1365,12 +1370,32 @@ class GitWarsEngine:
             self.danger_zones = []  # Reset danger zones
             self.danger_zone_timer = 0.0
         elif self.game_mode == 3:
-            # Spawn Juggernaut in center
             self.juggernaut = Juggernaut(
                 SCREEN_WIDTH // 2,
                 SCREEN_HEIGHT // 2,
                 self.particles
             )
+            
+        # Play Level-Specific BGM
+        try:
+            bgm_file = f"bgm{self.game_mode}.mp3"
+            path = os.path.join(ASSETS_DIR, bgm_file)
+            if os.path.exists(path):
+                pygame.mixer.music.load(path)
+                pygame.mixer.music.set_volume(MUSIC_VOLUME)
+                pygame.mixer.music.play(-1)
+            else:
+                # Fallback to generic "bgm.mp3" if specific level music missing
+                default_path = os.path.join(ASSETS_DIR, "bgm.mp3")
+                if os.path.exists(default_path):
+                    pygame.mixer.music.load(default_path)
+                    pygame.mixer.music.set_volume(MUSIC_VOLUME)
+                    pygame.mixer.music.play(-1)
+        except:
+            pass
+            
+        # Play Start Sound
+        play_sound(SFX_READY, VOL_READY)
     
     def generate_maze(self):
         """Generate walls for labyrinth mode."""
@@ -1480,7 +1505,8 @@ class GitWarsEngine:
                 if bullet:
                     self.bullets.append(bullet)
                     self.particles.spawn_muzzle_flash(bullet.x, bullet.y, angle, tank.color)
-                    play_sound(SFX_SHOOT)  # Shoot SFX
+                    self.particles.spawn_muzzle_flash(bullet.x, bullet.y, angle, tank.color)
+                    play_sound(SFX_SHOOT, VOL_SHOOT)  # Shoot SFX
             except:
                 pass
         
@@ -1504,7 +1530,8 @@ class GitWarsEngine:
                     if bullet:
                         self.bullets.append(bullet)
                         self.particles.spawn_muzzle_flash(bullet.x, bullet.y, float(shoot_angle), tank.color)
-                        play_sound(SFX_SHOOT)
+                        self.particles.spawn_muzzle_flash(bullet.x, bullet.y, float(shoot_angle), tank.color)
+                        play_sound(SFX_SHOOT, VOL_SHOOT)
             except:
                 pass
     
@@ -1636,7 +1663,7 @@ class GitWarsEngine:
                     if tank.alive and coin.get_rect().colliderect(tank.get_rect()):
                         coin.collected = True
                         tank.coins += COIN_VALUE
-                        play_sound(SFX_COIN)  # Coin pickup SFX
+                        play_sound(SFX_COIN, VOL_COIN)  # Coin pickup SFX
                         break
             
             self.coins = [c for c in self.coins if not c.collected]
@@ -1656,7 +1683,7 @@ class GitWarsEngine:
         self.camera.shake()
         
         # Explosion SFX
-        play_sound(SFX_EXPLOSION)
+        play_sound(SFX_DEATH, VOL_DEATH)
     
     def end_scramble(self):
         """End The Scramble mode."""
@@ -1667,6 +1694,12 @@ class GitWarsEngine:
         self.winner_text = "SCRAMBLE COMPLETE!\n"
         for i, tank in enumerate(winners):
             self.winner_text += f"\n#{i+1}: Tank {tank.id} - {tank.coins} coins"
+        
+        for i, tank in enumerate(winners):
+            self.winner_text += f"\n#{i+1}: Tank {tank.id} - {tank.coins} coins"
+        
+        pygame.mixer.music.stop()
+        play_sound(SFX_WIN_1, VOL_WIN)
     
     def end_labyrinth(self):
         """End The Labyrinth mode."""
@@ -1675,6 +1708,13 @@ class GitWarsEngine:
         self.winner_text = "LABYRINTH SURVIVORS:\n"
         for tank in survivors:
             self.winner_text += f"\nTank {tank.id}"
+            
+        self.winner_text = "LABYRINTH SURVIVORS:\n"
+        for tank in survivors:
+            self.winner_text += f"\nTank {tank.id}"
+            
+        pygame.mixer.music.stop()
+        play_sound(SFX_WIN_2, VOL_WIN)
     
     def end_duel(self, winner: Optional[Tank]):
         """End The Duel mode."""
@@ -1683,6 +1723,9 @@ class GitWarsEngine:
             self.winner_text = f"CHAMPION: Tank {winner.id}!"
         else:
             self.winner_text = "DRAW!"
+            
+        pygame.mixer.music.stop()
+        play_sound(SFX_WIN_3, VOL_WIN)
     
     def draw_background(self):
         """Draw the neon grid background."""
