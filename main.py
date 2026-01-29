@@ -63,10 +63,18 @@ def play_sound(sound: Optional[pygame.mixer.Sound], volume: float = SFX_VOLUME, 
         return
     
     sound.set_volume(volume)
-    
-    # Note: pygame doesn't support pitch shifting directly
-    # For pitch variation, we'd need multiple sound files or use pygame.sndarray
     sound.play()
+
+# Reserve channel 0 for critical sounds (win, ready) that should NEVER be cut off
+CRITICAL_CHANNEL = pygame.mixer.Channel(0)
+
+def play_critical_sound(sound: Optional[pygame.mixer.Sound], volume: float = 1.0):
+    """Play a critical sound on a reserved channel. This ensures it won't be cut off."""
+    if sound is None:
+        return
+    
+    sound.set_volume(volume)
+    CRITICAL_CHANNEL.play(sound)
 
 def start_background_music():
     """Start the background music loop."""
@@ -1332,6 +1340,7 @@ class GitWarsEngine:
         self.walls.clear()
         self.bots.clear()
         self.particles.particles.clear()  # Clear particles too
+        self.last_top5 = []  # Track top 5 ranking for coin sound on rank change
         
         # Spawn tanks in circle
         num_tanks = BOT_DEFAULT_COUNT if self.game_mode != 3 else 2
@@ -1394,8 +1403,8 @@ class GitWarsEngine:
         except:
             pass
             
-        # Play Start Sound
-        play_sound(SFX_READY, VOL_READY)
+        # Play Start Sound (on reserved channel so it won't get cut off)
+        play_critical_sound(SFX_READY, VOL_READY)
     
     def generate_maze(self):
         """Generate walls for labyrinth mode."""
@@ -1663,10 +1672,16 @@ class GitWarsEngine:
                     if tank.alive and coin.get_rect().colliderect(tank.get_rect()):
                         coin.collected = True
                         tank.coins += COIN_VALUE
-                        play_sound(SFX_COIN, VOL_COIN)  # Coin pickup SFX
                         break
             
             self.coins = [c for c in self.coins if not c.collected]
+            
+            # Check if top 5 ranking changed - play coin sound only on rank change
+            sorted_tanks = sorted(self.tanks, key=lambda t: t.coins, reverse=True)
+            current_top5 = [t.id for t in sorted_tanks[:5]]
+            if current_top5 != self.last_top5:
+                play_sound(SFX_COIN, VOL_COIN)  # Ranking changed!
+                self.last_top5 = current_top5
         
         # Check game end (Mode 3)
         if self.game_mode == 3:
@@ -1695,11 +1710,8 @@ class GitWarsEngine:
         for i, tank in enumerate(winners):
             self.winner_text += f"\n#{i+1}: Tank {tank.id} - {tank.coins} coins"
         
-        for i, tank in enumerate(winners):
-            self.winner_text += f"\n#{i+1}: Tank {tank.id} - {tank.coins} coins"
-        
         pygame.mixer.music.stop()
-        play_sound(SFX_WIN_1, VOL_WIN)
+        play_critical_sound(SFX_WIN_1, VOL_WIN)
     
     def end_labyrinth(self):
         """End The Labyrinth mode."""
@@ -1709,12 +1721,8 @@ class GitWarsEngine:
         for tank in survivors:
             self.winner_text += f"\nTank {tank.id}"
             
-        self.winner_text = "LABYRINTH SURVIVORS:\n"
-        for tank in survivors:
-            self.winner_text += f"\nTank {tank.id}"
-            
         pygame.mixer.music.stop()
-        play_sound(SFX_WIN_2, VOL_WIN)
+        play_critical_sound(SFX_WIN_2, VOL_WIN)
     
     def end_duel(self, winner: Optional[Tank]):
         """End The Duel mode."""
@@ -1725,7 +1733,7 @@ class GitWarsEngine:
             self.winner_text = "DRAW!"
             
         pygame.mixer.music.stop()
-        play_sound(SFX_WIN_3, VOL_WIN)
+        play_critical_sound(SFX_WIN_3, VOL_WIN)
     
     def draw_background(self):
         """Draw the neon grid background."""
