@@ -227,11 +227,16 @@ def update(context):
 
         # Priority 1: Dodge incoming bullets (standard MOVE)
         for bullet in bullets:
-            if will_bullet_hit_me(my_x, my_y, bullet):
+
 
                 # WRITE YOUR LOGIC HERE
-
-                #return ("MOVE",(dx,dy))
+              jvbjivbeif
+              nfibfk
+              guiebiben
+              hiuebg
+              gebi
+              gejbgikg
+              jnken 
 
         if coins:
             nearest_coin, dist = find_nearest(my_x, my_y, coins)
@@ -256,7 +261,7 @@ def update(context):
             if will_bullet_hit_me(my_x, my_y, bullet):
 
                 # WRITE YOUR LOGIC HERE
-
+                
                 #return ("MOVE",(dx,dy))
 
         if enemies and me["ammo"] > 0:
@@ -334,3 +339,37 @@ def update(context):
     dx = math.cos(math.radians(angle))
     dy = math.sin(math.radians(angle))
     return ("MOVE", (dx, dy))
+
+# context = {
+#     "me": {
+#         "x": 0,      # Your tank's X position
+#         "y": 0,      # Your tank's Y position  
+#         "angle": 45,  # Your tank's facing angle (degrees)
+#         "health": 1000,   # Your current health (0-1000)
+#         "ammo": 200,     # Your remaining bullets
+#         "coins": 1     # Coins collected (Mode 1 only)
+#     },
+#     "enemies": [
+#         {"x": float, "y": float, "id": int},  # List of enemy positions
+#         ...
+#     ],
+#     "coins": [
+#         {"x": float, "y": float},  # List of coin positions (Mode 1 only)
+#         ...
+#     ],
+#     "walls": [
+#         {"x": float, "y": float, "width": float, "height": float},  # Walls
+#         ...
+#     ],
+#     "bullets": [
+#         {"x": float, "y": float, "vx": float, "vy": float},  # Enemy bullets
+#         ...
+#     ],
+#     "sensors": {
+#         "front": float,  # Distance to wall ahead (max 300 pixels)
+#         "left": float,   # Distance to wall at -30 degrees
+#         "right": float   # Distance to wall at +30 degrees
+#     },
+#     "game_mode": int,     # 1=Scramble, 2=Labyrinth, 3=Juggernaut
+#     "time_left": float    # Time remaining in seconds
+# }
